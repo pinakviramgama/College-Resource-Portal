@@ -1,0 +1,36 @@
+import { useMemo, useState } from 'react';
+import { BookOpen, Download, FileArchive, FileText, Search, SlidersHorizontal } from 'lucide-react';
+import { Link, useSearch } from 'wouter';
+import { getListMaterialsQueryKey, getListSubjectsQueryKey, useListMaterials, useListSubjects, type Material } from '@workspace/api-client-react';
+import { AppShell, EmptyState, SectionEyebrow, formatBytes, formatDate } from '@/components/library-shell';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+
+function MaterialCard({ material }: { material: Material }) {
+  const isPdf = material.fileType?.includes('pdf') || material.fileName?.toLowerCase().endsWith('.pdf');
+  return <Link href={`/materials/${material.id}`} className="group block rounded-2xl border border-border bg-card p-5 paper-shadow lift" data-testid={`card-material-${material.id}`}><div className="flex items-start justify-between"><span className="grid size-11 place-items-center rounded-xl bg-secondary text-foreground">{isPdf ? <FileText className="size-5" /> : <FileArchive className="size-5" />}</span><span className="rounded-full bg-muted px-2.5 py-1 font-mono-app text-[10px] uppercase tracking-wider text-muted-foreground">{material.category}</span></div><p className="mt-7 font-mono-app text-[10px] uppercase tracking-widest text-muted-foreground">{material.courseCode} · {material.semester} · {material.year}</p><h3 className="mt-2 line-clamp-2 font-display text-[1.65rem] font-semibold leading-tight group-hover:text-accent-foreground">{material.title}</h3><p className="mt-3 line-clamp-2 text-sm leading-6 text-muted-foreground">{material.description}</p><div className="mt-6 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground"><span>{material.subject}</span><span className="flex items-center gap-1.5"><Download className="size-3.5" />{material.downloads}</span></div></Link>;
+}
+
+export default function Materials() {
+  const searchString = useSearch();
+  const urlParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
+  const [search, setSearch] = useState(urlParams.get('search') || '');
+  const [subject, setSubject] = useState(urlParams.get('subject') || '');
+  const [category, setCategory] = useState('');
+  const [semester, setSemester] = useState('');
+  const [sort, setSort] = useState(urlParams.get('sort') || 'recent');
+  const params = useMemo(() => ({ search: search || undefined, subject: subject || undefined, category: category || undefined, semester: semester || undefined, sort: sort as 'recent' | 'popular' }), [search, subject, category, semester, sort]);
+  const materials = useListMaterials(params, { query: { queryKey: getListMaterialsQueryKey(params) }, request: { credentials: 'include' } });
+  const subjects = useListSubjects({ query: { queryKey: getListSubjectsQueryKey() }, request: { credentials: 'include' } });
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  return <AppShell><main className="mx-auto max-w-7xl px-5 py-10 sm:px-8 lg:px-16 lg:py-14">
+    <div className="flex flex-wrap items-end justify-between gap-6"><div><SectionEyebrow>THE OPEN SHELF</SectionEyebrow><h1 className="font-display text-5xl font-semibold tracking-tight sm:text-6xl">Browse materials</h1><p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">Reviewed resources from the people who take these courses with you.</p></div><div className="font-mono-app text-[10px] uppercase tracking-widest text-muted-foreground">{materials.data?.length ?? '—'} items in view</div></div>
+    <div className="mt-10 flex flex-col gap-3 rounded-2xl border border-border bg-card p-3 shadow-sm sm:flex-row"><div className="relative flex-1"><Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search title, subject, or code" className="h-11 border-0 bg-muted/50 pl-10 shadow-none focus-visible:ring-1" data-testid="input-material-search" /></div><Button variant="outline" className="h-11 sm:hidden" onClick={() => setFiltersOpen(!filtersOpen)} data-testid="button-toggle-filters"><SlidersHorizontal className="size-4" /> Filters</Button><div className={filtersOpen ? 'grid grid-cols-2 gap-2 sm:flex' : 'hidden sm:flex sm:gap-2'}><select value={subject} onChange={(event) => setSubject(event.target.value)} className="h-11 min-w-[140px] rounded-md border border-input bg-background px-3 text-sm" data-testid="select-subject"><option value="">All subjects</option>{(subjects.data || []).map((item) => <option key={item.subject} value={item.subject}>{item.subject}</option>)}</select><select value={category} onChange={(event) => setCategory(event.target.value)} className="h-11 min-w-[132px] rounded-md border border-input bg-background px-3 text-sm" data-testid="select-category"><option value="">All types</option><option value="Exam Paper">Exam papers</option><option value="Lecture Notes">Lecture notes</option><option value="Study Guide">Study guides</option><option value="Assignment">Assignments</option></select><select value={semester} onChange={(event) => setSemester(event.target.value)} className="h-11 min-w-[132px] rounded-md border border-input bg-background px-3 text-sm" data-testid="select-semester"><option value="">Any semester</option><option value="Semester 1">Semester 1</option><option value="Semester 2">Semester 2</option></select><Button variant="secondary" className="h-11" onClick={() => setSort(sort === 'recent' ? 'popular' : 'recent')} data-testid="button-sort-materials"><Download className="size-4" /> {sort === 'recent' ? 'Recent' : 'Popular'}</Button></div></div>
+    {materials.isError && <div className="mt-6 rounded-2xl border border-destructive/30 bg-[#f8dfdb] p-5 text-sm text-[#7c3029]" data-testid="error-materials"><p className="font-bold">The shelf could not be reached.</p><p className="mt-1">Try again in a moment, or return to the overview.</p><Button variant="outline" className="mt-4 border-[#c4786e]" onClick={() => materials.refetch()} data-testid="button-retry-materials">Try again</Button></div>}
+    <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">{materials.isLoading ? Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-[325px] animate-pulse rounded-2xl bg-muted" data-testid={`skeleton-material-${i}`} />) : (materials.data || []).map((material) => <MaterialCard key={material.id} material={material} />)}</div>
+    {!materials.isLoading && !materials.isError && !materials.data?.length && <div className="mt-8"><EmptyState title="Nothing on this shelf" body="Try a broader search or clear one of the filters. If you have a useful resource, you can add it to the collection." action={<Link href="/upload" className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-bold text-primary-foreground" data-testid="link-empty-materials-upload"><UploadIcon /> Share a resource</Link>} /></div>}
+  </main></AppShell>;
+}
+
+function UploadIcon() { return <BookOpen className="size-4" />; }

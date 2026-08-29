@@ -3,13 +3,19 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API for the Campus Library student resource portal
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: materials
+    description: Approved student learning resources
+  - name: admin
+    description: Administrative moderation workflows
+  - name: storage
+    description: Persistent material uploads
 paths:
   /healthz:
     get:
@@ -24,6 +30,192 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /materials:
+    get:
+      operationId: listMaterials
+      tags: [materials]
+      summary: List approved materials
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema: { type: string }
+        - name: subject
+          in: query
+          required: false
+          schema: { type: string }
+        - name: category
+          in: query
+          required: false
+          schema: { type: string }
+        - name: semester
+          in: query
+          required: false
+          schema: { type: string }
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [recent, popular]
+            default: recent
+      responses:
+        "200":
+          description: Approved materials
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Material" }
+    post:
+      operationId: createMaterial
+      tags: [materials]
+      summary: Submit a material for review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MaterialInput" }
+      responses:
+        "201":
+          description: Submitted material
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Material" }
+        "400":
+          description: Invalid material
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /materials/{id}:
+    get:
+      operationId: getMaterial
+      tags: [materials]
+      summary: Get a material
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Material
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Material" }
+        "404":
+          description: Material not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /subjects:
+    get:
+      operationId: listSubjects
+      tags: [materials]
+      summary: List available subjects
+      responses:
+        "200":
+          description: Subjects with counts
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SubjectSummary" }
+  /dashboard/stats:
+    get:
+      operationId: getDashboardStats
+      tags: [materials]
+      summary: Get library dashboard summary
+      responses:
+        "200":
+          description: Library summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DashboardStats" }
+  /admin/submissions:
+    get:
+      operationId: listAdminSubmissions
+      tags: [admin]
+      summary: List submitted materials for moderation
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, approved, rejected, all]
+            default: pending
+      responses:
+        "200":
+          description: Submitted materials
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Material" }
+  /admin/submissions/{id}/approve:
+    patch:
+      operationId: approveSubmission
+      tags: [admin]
+      summary: Approve a submitted material
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Approved material
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Material" }
+        "404":
+          description: Submission not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /admin/submissions/{id}/reject:
+    patch:
+      operationId: rejectSubmission
+      tags: [admin]
+      summary: Reject a submitted material
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewInput" }
+      responses:
+        "200":
+          description: Rejected material
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Material" }
+        "404":
+          description: Submission not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /storage/uploads/request-url:
+    post:
+      operationId: requestUploadUrl
+      tags: [storage]
+      summary: Request a presigned upload URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadRequest" }
+      responses:
+        "200":
+          description: Presigned upload URL
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadResponse" }
 components:
   schemas:
     HealthStatus:
@@ -33,4 +225,118 @@ components:
           type: string
       required:
         - status
+    ErrorResponse:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+    Material:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        description: { type: string }
+        subject: { type: string }
+        courseCode: { type: string }
+        category: { type: string }
+        semester: { type: string }
+        year: { type: integer }
+        fileName: { type: string }
+        fileSize: { type: integer }
+        fileType: { type: string }
+        objectPath: { type: ["string", "null"] }
+        uploadedBy: { type: string }
+        uploadedByName: { type: string }
+        status: { type: string, enum: [pending, approved, rejected] }
+        downloads: { type: integer }
+        createdAt: { type: string, format: date-time }
+        reviewNote: { type: ["string", "null"] }
+      required:
+        - id
+        - title
+        - description
+        - subject
+        - courseCode
+        - category
+        - semester
+        - year
+        - fileName
+        - fileSize
+        - fileType
+        - objectPath
+        - uploadedBy
+        - uploadedByName
+        - status
+        - downloads
+        - createdAt
+        - reviewNote
+    MaterialInput:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        subject: { type: string, minLength: 1 }
+        courseCode: { type: string, minLength: 1 }
+        category: { type: string, minLength: 1 }
+        semester: { type: string, minLength: 1 }
+        year: { type: integer }
+        fileName: { type: string, minLength: 1 }
+        fileSize: { type: integer, minimum: 1 }
+        fileType: { type: string, minLength: 1 }
+        objectPath: { type: ["string", "null"] }
+        uploadedBy: { type: string, minLength: 1 }
+        uploadedByName: { type: string, minLength: 1 }
+      required:
+        - title
+        - description
+        - subject
+        - courseCode
+        - category
+        - semester
+        - year
+        - fileName
+        - fileSize
+        - fileType
+        - uploadedBy
+        - uploadedByName
+    ReviewInput:
+      type: object
+      properties:
+        reviewNote: { type: string }
+      required: [reviewNote]
+    SubjectSummary:
+      type: object
+      properties:
+        subject: { type: string }
+        count: { type: integer }
+      required: [subject, count]
+    DashboardStats:
+      type: object
+      properties:
+        totalMaterials: { type: integer }
+        totalSubjects: { type: integer }
+        pendingSubmissions: { type: integer }
+        totalDownloads: { type: integer }
+        popularSubjects:
+          type: array
+          items: { $ref: "#/components/schemas/SubjectSummary" }
+      required:
+        - totalMaterials
+        - totalSubjects
+        - pendingSubmissions
+        - totalDownloads
+        - popularSubjects
+    UploadRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        size: { type: integer, minimum: 1 }
+        contentType: { type: string, minLength: 1 }
+      required: [name, size, contentType]
+    UploadResponse:
+      type: object
+      properties:
+        uploadURL: { type: string, format: uri }
+        objectPath: { type: string }
+      required: [uploadURL, objectPath]
 

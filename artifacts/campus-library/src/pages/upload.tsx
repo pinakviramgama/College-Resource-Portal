@@ -1,0 +1,50 @@
+import { useRef, useState, type FormEvent } from 'react';
+import { Check, ChevronRight, CloudUpload, FileText, LockKeyhole, X } from 'lucide-react';
+import { Link, useLocation } from 'wouter';
+import { useUser } from '@clerk/react';
+import { getListMaterialsQueryKey, useCreateMaterial, useRequestUploadUrl } from '@workspace/api-client-react';
+import { AppShell, SectionEyebrow, formatBytes } from '@/components/library-shell';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { useQueryClient } from '@tanstack/react-query';
+
+const categories = ['Exam Paper', 'Lecture Notes', 'Study Guide', 'Assignment', 'Reading'];
+const semesters = ['Semester 1', 'Semester 2', 'Summer'];
+
+export default function Upload() {
+  const { user, isLoaded } = useUser();
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+  const requestUrl = useRequestUploadUrl();
+  const createMaterial = useCreateMaterial();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [form, setForm] = useState({ title: '', description: '', subject: '', courseCode: '', category: '', semester: '', year: String(new Date().getFullYear()) });
+  const [error, setError] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+
+  if (!isLoaded) return <AppShell><main className="mx-auto max-w-4xl px-5 py-14 sm:px-8"><div className="h-8 w-56 animate-pulse rounded bg-muted" /><div className="mt-10 h-[520px] animate-pulse rounded-2xl bg-muted" /></main></AppShell>;
+  if (!user) return <AppShell><main className="mx-auto max-w-lg px-5 py-24 text-center sm:px-8"><LockKeyhole className="mx-auto size-9 text-accent-foreground" /><h1 className="mt-6 font-display text-4xl font-semibold">Sign in to share</h1><p className="mt-3 text-sm leading-6 text-muted-foreground">Your name is attached to each contribution so the commons can stay accountable.</p><Link href="/sign-in" className="mt-7 inline-flex h-11 items-center rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground" data-testid="link-upload-sign-in">Sign in to continue</Link></main></AppShell>;
+
+  const update = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setError('');
+    if (!file) return setError('Choose a file before submitting.');
+    if (!form.title || !form.subject || !form.courseCode || !form.category || !form.semester) return setError('Fill in the required fields so students can find this later.');
+    try {
+      const upload = await requestUrl.mutateAsync({ data: { name: file.name, size: file.size, contentType: file.type || 'application/octet-stream' } });
+      const response = await fetch(upload.uploadURL, { method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+      if (!response.ok) throw new Error('The file could not be stored.');
+      await createMaterial.mutateAsync({ data: { title: form.title, description: form.description, subject: form.subject, courseCode: form.courseCode, category: form.category, semester: form.semester, year: Number(form.year), fileName: file.name, fileSize: file.size, fileType: file.type || 'application/octet-stream', objectPath: upload.objectPath, uploadedBy: user.id, uploadedByName: user.fullName || user.firstName || user.emailAddresses[0]?.emailAddress || 'Student' } });
+      await queryClient.invalidateQueries({ queryKey: getListMaterialsQueryKey() });
+      setSubmitted(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Something went wrong. Please try again.');
+    }
+  };
+
+  if (submitted) return <AppShell><main className="mx-auto max-w-2xl px-5 py-20 sm:px-8"><div className="rounded-3xl border border-border bg-card p-8 paper-shadow sm:p-12"><div className="grid size-14 place-items-center rounded-2xl bg-[#e1eee9] text-[#286052]"><Check className="size-7" /></div><SectionEyebrow>SUBMISSION RECEIVED</SectionEyebrow><h1 className="font-display text-5xl font-semibold leading-none">It is on its way<br /><span className="text-muted-foreground">to the shelf.</span></h1><p className="mt-6 max-w-lg text-sm leading-7 text-muted-foreground">Thanks for sharing, {user.firstName || 'student'}. An admin will review your resource for clarity and course relevance. We will keep it in the queue until then.</p><div className="mt-8 flex flex-wrap gap-3"><Link href="/materials" className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground" data-testid="link-submission-browse">Browse the library <ChevronRight className="size-4" /></Link><Button variant="outline" onClick={() => { setSubmitted(false); setFile(null); setForm({ title: '', description: '', subject: '', courseCode: '', category: '', semester: '', year: String(new Date().getFullYear()) }); }} data-testid="button-submit-another">Submit another</Button></div></div></main></AppShell>;
+
+  return <AppShell><main className="mx-auto max-w-4xl px-5 py-10 sm:px-8 lg:py-14"><SectionEyebrow>RETURN A GOOD PAGE</SectionEyebrow><h1 className="font-display text-5xl font-semibold tracking-tight sm:text-6xl">Share a resource</h1><p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground">Upload something that made a difficult topic clearer. Every submission is reviewed before it joins the public shelf.</p><form onSubmit={submit} className="mt-10 rounded-2xl border border-border bg-card p-5 paper-shadow sm:p-8"><div className="grid gap-6 sm:grid-cols-2"><label className="sm:col-span-2"><span className="mb-2 block text-xs font-bold">Title <b className="text-accent-foreground">*</b></span><Input value={form.title} onChange={(event) => update('title', event.target.value)} placeholder="e.g. Data Structures — Final Exam 2024" data-testid="input-upload-title" /></label><label><span className="mb-2 block text-xs font-bold">Subject <b className="text-accent-foreground">*</b></span><Input value={form.subject} onChange={(event) => update('subject', event.target.value)} placeholder="Computer Science" data-testid="input-upload-subject" /></label><label><span className="mb-2 block text-xs font-bold">Course code <b className="text-accent-foreground">*</b></span><Input value={form.courseCode} onChange={(event) => update('courseCode', event.target.value)} placeholder="CS201" data-testid="input-upload-course-code" /></label><label className="sm:col-span-2"><span className="mb-2 block text-xs font-bold">Description</span><textarea value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Give the next student enough context to know if this is for them." className="min-h-28 w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring" data-testid="textarea-upload-description" /></label><label><span className="mb-2 block text-xs font-bold">Resource type <b className="text-accent-foreground">*</b></span><select value={form.category} onChange={(event) => update('category', event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" data-testid="select-upload-category"><option value="">Choose a type</option>{categories.map((item) => <option key={item}>{item}</option>)}</select></label><label><span className="mb-2 block text-xs font-bold">Semester <b className="text-accent-foreground">*</b></span><select value={form.semester} onChange={(event) => update('semester', event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" data-testid="select-upload-semester"><option value="">Choose a semester</option>{semesters.map((item) => <option key={item}>{item}</option>)}</select></label><label><span className="mb-2 block text-xs font-bold">Academic year</span><Input type="number" value={form.year} onChange={(event) => update('year', event.target.value)} data-testid="input-upload-year" /></label><div><span className="mb-2 block text-xs font-bold">File <b className="text-accent-foreground">*</b></span><input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.txt" onChange={(event) => setFile(event.target.files?.[0] || null)} className="sr-only" data-testid="input-upload-file" /><button type="button" onClick={() => fileRef.current?.click()} className="flex h-10 w-full items-center gap-2 rounded-md border border-dashed border-accent-foreground/50 bg-accent/10 px-3 text-left text-sm font-semibold hover:bg-accent/20" data-testid="button-choose-file"><CloudUpload className="size-4 shrink-0 text-accent-foreground" /> {file ? file.name : 'Choose a document'}</button></div></div>{file && <div className="mt-6 flex items-center justify-between rounded-xl bg-muted p-3"><div className="flex min-w-0 items-center gap-3"><FileText className="size-5 shrink-0 text-accent-foreground" /><div className="min-w-0"><p className="truncate text-sm font-semibold">{file.name}</p><p className="font-mono-app text-[10px] text-muted-foreground">{formatBytes(file.size)}</p></div></div><button type="button" onClick={() => setFile(null)} className="rounded-md p-1.5 text-muted-foreground hover:bg-background" data-testid="button-remove-file"><X className="size-4" /></button></div>}{error && <p className="mt-5 rounded-lg bg-[#f8dfdb] px-3 py-2.5 text-sm text-[#7c3029]" data-testid="error-upload">{error}</p>}<div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-6"><p className="text-xs text-muted-foreground">Accepted: PDF, Word, PowerPoint, or text files.</p><Button type="submit" disabled={requestUrl.isPending || createMaterial.isPending} className="h-11 px-5" data-testid="button-submit-upload">{requestUrl.isPending || createMaterial.isPending ? 'Sending to review…' : 'Submit for review'} <ChevronRight className="size-4" /></Button></div></form></main></AppShell>;
+}
