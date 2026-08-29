@@ -129,6 +129,7 @@ function Router() {
         <Route path="/materials" component={Materials} />
         <Route path="/materials/:id" component={MaterialDetail} />
         <Route path="/upload" component={Upload} />
+        <Route path="/my-submissions" component={MySubmissions} />
         <Route path="/admin" component={ProtectedAdmin} />
         <Route path="/sign-in/*?" component={SignInPage} />
         <Route path="/sign-up/*?" component={SignUpPage} />
