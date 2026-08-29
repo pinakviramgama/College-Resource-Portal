@@ -30,6 +30,7 @@ router.get("/materials", async (req, res): Promise<void> => {
   }
 
   const { search, subject, category, semester, sort } = parsed.data;
+
   const conditions = [
     eq(materialsTable.status, "approved"),
     subject ? eq(materialsTable.subject, subject) : undefined,
@@ -49,19 +50,26 @@ router.get("/materials", async (req, res): Promise<void> => {
     .select()
     .from(materialsTable)
     .where(and(...conditions))
-    .orderBy(sort === "popular" ? desc(materialsTable.downloads) : desc(materialsTable.createdAt));
+    .orderBy(
+      sort === "popular"
+        ? desc(materialsTable.downloads)
+        : desc(materialsTable.createdAt),
+    );
 
   res.json(ListMaterialsResponse.parse(materials));
 });
 
+
 router.post("/materials", async (req, res): Promise<void> => {
   const parsed = CreateMaterialBody.safeParse(req.body);
+
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
 
   const authUserId = getAuth(req).userId;
+
   const [material] = await db
     .insert(materialsTable)
     .values({
@@ -75,8 +83,52 @@ router.post("/materials", async (req, res): Promise<void> => {
   res.status(201).json(CreateMaterialResponse.parse(material));
 });
 
+
+/*
+ * ============================================================
+ * MY SUBMISSIONS
+ * ============================================================
+ *
+ * Returns ONLY the materials uploaded by the currently
+ * logged-in student.
+ *
+ * Possible statuses:
+ *   pending
+ *   approved
+ *   rejected
+ */
+router.get("/materials/my-submissions", async (req, res): Promise<void> => {
+  const authUserId = getAuth(req).userId;
+
+  // Student must be logged in
+  if (!authUserId) {
+    res.status(401).json({
+      error: "You must be signed in to view your submissions",
+    });
+    return;
+  }
+
+  try {
+    const submissions = await db
+      .select()
+      .from(materialsTable)
+      .where(eq(materialsTable.uploadedBy, authUserId))
+      .orderBy(desc(materialsTable.createdAt));
+
+    res.json(submissions);
+  } catch (error) {
+    console.error("Error loading user submissions:", error);
+
+    res.status(500).json({
+      error: "Failed to load your submissions",
+    });
+  }
+});
+
+
 router.get("/materials/:id", async (req, res): Promise<void> => {
   const params = GetMaterialParams.safeParse(req.params);
+
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
     return;
@@ -86,7 +138,10 @@ router.get("/materials/:id", async (req, res): Promise<void> => {
     .select()
     .from(materialsTable)
     .where(
-      and(eq(materialsTable.id, params.data.id), eq(materialsTable.status, "approved")),
+      and(
+        eq(materialsTable.id, params.data.id),
+        eq(materialsTable.status, "approved"),
+      ),
     );
 
   if (!material) {
@@ -96,6 +151,7 @@ router.get("/materials/:id", async (req, res): Promise<void> => {
 
   res.json(GetMaterialResponse.parse(material));
 });
+
 
 router.get("/subjects", async (_req, res): Promise<void> => {
   const subjects = await db
@@ -111,6 +167,7 @@ router.get("/subjects", async (_req, res): Promise<void> => {
   res.json(ListSubjectsResponse.parse(subjects));
 });
 
+
 router.get("/dashboard/stats", async (_req, res): Promise<void> => {
   const [totals] = await db
     .select({
@@ -119,14 +176,21 @@ router.get("/dashboard/stats", async (_req, res): Promise<void> => {
     })
     .from(materialsTable)
     .where(eq(materialsTable.status, "approved"));
+
   const [subjectTotals] = await db
-    .select({ totalSubjects: sql<number>`count(distinct ${materialsTable.subject})` })
+    .select({
+      totalSubjects: sql<number>`count(distinct ${materialsTable.subject})`,
+    })
     .from(materialsTable)
     .where(eq(materialsTable.status, "approved"));
+
   const [pending] = await db
-    .select({ pendingSubmissions: count(materialsTable.id) })
+    .select({
+      pendingSubmissions: count(materialsTable.id),
+    })
     .from(materialsTable)
     .where(eq(materialsTable.status, "pending"));
+
   const popularSubjects = await db
     .select({
       subject: materialsTable.subject,
@@ -149,60 +213,94 @@ router.get("/dashboard/stats", async (_req, res): Promise<void> => {
   );
 });
 
+
 router.get("/admin/submissions", async (req, res): Promise<void> => {
   const parsed = ListAdminSubmissionsQueryParams.safeParse(req.query);
+
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
 
   const { status } = parsed.data;
+
   const submissions = await db
     .select()
     .from(materialsTable)
-    .where(status === "all" ? undefined : eq(materialsTable.status, status))
+    .where(
+      status === "all"
+        ? undefined
+        : eq(materialsTable.status, status),
+    )
     .orderBy(desc(materialsTable.createdAt));
 
   res.json(ListAdminSubmissionsResponse.parse(submissions));
 });
 
-router.patch("/admin/submissions/:id/approve", async (req, res): Promise<void> => {
-  const params = ApproveSubmissionParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
 
-  const [material] = await db
-    .update(materialsTable)
-    .set({ status: "approved", reviewNote: null })
-    .where(eq(materialsTable.id, params.data.id))
-    .returning();
-  if (!material) {
-    res.status(404).json({ error: "Submission not found" });
-    return;
-  }
-  res.json(ApproveSubmissionResponse.parse(material));
-});
+router.patch(
+  "/admin/submissions/:id/approve",
+  async (req, res): Promise<void> => {
+    const params = ApproveSubmissionParams.safeParse(req.params);
 
-router.patch("/admin/submissions/:id/reject", async (req, res): Promise<void> => {
-  const params = RejectSubmissionParams.safeParse(req.params);
-  const body = RejectSubmissionBody.safeParse(req.body);
-  if (!params.success || !body.success) {
-    res.status(400).json({ error: "Invalid rejection request" });
-    return;
-  }
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
 
-  const [material] = await db
-    .update(materialsTable)
-    .set({ status: "rejected", reviewNote: body.data.reviewNote })
-    .where(eq(materialsTable.id, params.data.id))
-    .returning();
-  if (!material) {
-    res.status(404).json({ error: "Submission not found" });
-    return;
-  }
-  res.json(RejectSubmissionResponse.parse(material));
-});
+    const [material] = await db
+      .update(materialsTable)
+      .set({
+        status: "approved",
+        reviewNote: null,
+      })
+      .where(eq(materialsTable.id, params.data.id))
+      .returning();
+
+    if (!material) {
+      res.status(404).json({
+        error: "Submission not found",
+      });
+      return;
+    }
+
+    res.json(ApproveSubmissionResponse.parse(material));
+  },
+);
+
+
+router.patch(
+  "/admin/submissions/:id/reject",
+  async (req, res): Promise<void> => {
+    const params = RejectSubmissionParams.safeParse(req.params);
+    const body = RejectSubmissionBody.safeParse(req.body);
+
+    if (!params.success || !body.success) {
+      res.status(400).json({
+        error: "Invalid rejection request",
+      });
+      return;
+    }
+
+    const [material] = await db
+      .update(materialsTable)
+      .set({
+        status: "rejected",
+        reviewNote: body.data.reviewNote,
+      })
+      .where(eq(materialsTable.id, params.data.id))
+      .returning();
+
+    if (!material) {
+      res.status(404).json({
+        error: "Submission not found",
+      });
+      return;
+    }
+
+    res.json(RejectSubmissionResponse.parse(material));
+  },
+);
+
 
 export default router;
