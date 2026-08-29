@@ -11,6 +11,7 @@ import Materials from '@/pages/materials';
 import MaterialDetail from '@/pages/material-detail';
 import Upload from '@/pages/upload';
 import Admin from '@/pages/admin';
+import MySubmissions from '@/pages/my-submissions';
 import NotFound from '@/pages/not-found';
 import {
   Redirect,
