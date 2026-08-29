@@ -121,15 +121,13 @@ function ShieldIcon() {
 
 function Router() {
   return (
-    // Keep a shared shell (sidebar, navbar) outside the boundary so it
-    // survives a page crash.
     <RoutedErrorBoundary>
       <Switch>
         <Route path="/" component={HomeRedirect} />
         <Route path="/materials" component={Materials} />
+        <Route path="/my-submissions" component={MySubmissions} />
         <Route path="/materials/:id" component={MaterialDetail} />
         <Route path="/upload" component={Upload} />
-        <Route path="/my-submissions" component={MySubmissions} />
         <Route path="/admin" component={ProtectedAdmin} />
         <Route path="/sign-in/*?" component={SignInPage} />
         <Route path="/sign-up/*?" component={SignUpPage} />
